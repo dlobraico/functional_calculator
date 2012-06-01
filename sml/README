@@ -1,0 +1,137 @@
+README: interactive calculator for CS223 Homework 6
+
+1. The program consists of the following files:
+
+  calc.cm           -- CM description file
+  instream.sig      -- INSTREAM signature
+  listinstream.sml  -- ListInstream: INSTREAM  structure
+  readerfn.sml      -- ReaderFn (reader functor)
+  reader.sml        -- Reader structure, an instance of ReaderFn
+  tokens.sml*       -- Tokens - a tokenizer
+  exprs.sml         -- Exprs - abstract syntax of expressions, declaratons, statements
+  parser.sml*       -- Parser - maps token streams to abstract syntax
+  env.sml           -- Env - polymorphic environments with string keys implemented by ordered alists
+  eval.sml*         -- Eval - defines values and evaluators for expressions and declarations
+  calc.sml          -- Calc - interactive top-level loop of calculator
+
+The files marked with * are incomplete, and require code to be added.
+
+2. To build, run sml in the calculator source directory and execute
+
+   - CM.make "calc.cm";
+
+3. To run, call the function Calc.calc : unit -> unit:
+
+   - Calc.calc ()
+
+Then type in expressions and declarations in the calculator language, one per line.
+Terminate input by entering ^C.  The input prompt is the "#" character.
+
+----------------------------------------------------------------------------------
+Discussion
+
+The language accepted by the calculator is a beafed-up version of the language
+sketched in the Homework 6 write-up.
+
+It handles arithmetic operators including unary negation (~) and binary operators
+
+     +, -        (addition and subtraction)
+     *, /, %     (multiplication, integer division, modulo)
+
+and if-then-else expressions.
+
+It also handles boolean expressions:
+
+     e relop e'    (relop in ==, /=, <, >, <=, >=)
+     e || e'
+     e && e'
+     not(e)
+
+It has variables (alphanumeric) bound by let declarations:
+
+     let x = e
+
+and function definitions
+
+     fun f x = e
+
+with function applications of the form
+
+     f(e)
+
+The operator precedences are follow the usual conventions, from weakest to
+strongest:
+
+     ||; &&; (==, /=, <, >, <=, >=); (+, -); (*, /, %)
+
+with function application forms ("not(e)", "~e", "f(e)") binding most strongly.
+
+There is also a general conditional expression
+
+    if e1 then e2 else e3
+
+where e1 must have a boolean value and e2 and e3 can have any values.
+
+Functions can be recursive.  For instance, the factorial function can be
+defined by
+
+    fun fact x = if x == 0 then 1 else x * fact(x-1)
+
+We also have an implicit kind of polymorphism.  If you define the identity
+function:
+
+    fun id x = x
+
+then id can be applied to integer values, boolean values, and even function
+values:
+
+    # id(3)
+    >> 3
+    # id(true)
+    >> true
+    # id(fact)
+    >> <function>
+
+But the calculator is not quite a full functional (higher-order) language.
+For instance
+
+    # let g = id(fact)
+    >> g = <function>
+    # g(4)
+    Error - unbound var: fact
+
+Rebinding the function value of fact to g breaks the evaluation technique
+we use to implement recursion [look at the code for Eval.eval and try to
+understand why].
+
+
+Grammar
+-------
+Here is the full grammar of the calculator language, including both
+arithmetic, relational, and boolean expressions, let declarations and
+variable expressions, and function declarations and function application
+expressions.
+
+empty  ::=
+
+-- arithmetic expressions
+aexpr   ::=  aterm ("+" aexpr | "-" aexpr | empty)
+bterm   ::=  factor ("*" aterm | "/" aterm | "%" aterm | empty)
+afactor ::=  "~" afactor | "(" cexpr ")" | id "(" cexpr ")" | nat | id
+nat     ::=  Nat n    -- literal Nat token
+id      ::=  Id s     -- literal Id token
+
+-- relational expression
+rexpr  ::=  aexpr "==" aexpr | aexpr "/=" aexpr | aexpr "<" aexpr | aexpr ">" aexpr 
+        |   aexpr "<=" aexpr | aexpr ">=" aexpr 
+
+-- boolean expressions
+bexpr   ::=  bterm ("||" bexpr | empty)
+bterm   ::=  bfactor ("&&" | empty)
+bfactor ::=  "not" "(" bexpr ")" | "true" | "false" | cexpr
+
+-- conditional expression
+cexpr  ::=  "if" bexpr "then" bexpr "else" bexpr | aexpr
+
+decl   ::=  "let" id "=" bexpr | "fun" id id = bexpr
+stmt   ::=  decl | bexpr

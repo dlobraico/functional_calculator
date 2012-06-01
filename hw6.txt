@@ -1,0 +1,873 @@
+CS223 Homework 6
+Due Midnight, Thursday, May 31
+
+A programming project: an interactive calculator.
+
+Build an interactive calculator that basically does the following
+(with indicated point values):
+
+1. [25] inputs expressions to be evaluated, written in an algebraic
+notation (e.g. "3 * (2 - 1)"). The expression notation should support
+the usual conventions of operator precedence. Input initially will be
+assumed to be from stdin.
+
+2. [10] evaluate the expressions entered in step 1
+
+3. [5] print the result (be default on stdout)
+
+We will assume that we are dealing with integer arithmetic, supporting
+the following set of operations:
+
+   +, -, *, div, mod
+
+plus a unary negation operator ~ (as in SML).
+
+
+Once the basic functionality is working, with just simple arithmetic
+expressions, we can start adding features:
+
+(a) [15] Simple variable definitions like
+
+   let x = 3 * 5
+
+and the use of such variables in expressions (e.g. 2 * x -1)
+
+(b) [20] simple unary function definitions, e.g.
+
+   fun f x = x * 3 - 2
+
+along with the use of such defined functions in expressions:
+f(3) + 2.
+
+(c) [15] relational operators like ==, <  and conditional
+expressions of the form "if x < 3 then 2 else g y" (but not while
+loops, since these would not make sense because there are no side
+effects in the calculator language). Just == and < will suffice,
+but you can add others like >, <=, >=.
+
+(d) [5] recursive function definitions, like factorial.
+
+For up to 20 extra credit points, you can implement a type checker for
+the calculator language (once you have function and/or boolean values
+in addition to integer values, so that there are types to
+discriminate).
+
+You may not be able to complete all parts of the project, but do as
+many as you can. Quality is important.
+
+*********************************************
+
+IMPORTANT: Please make your code as neat, well-formated, and readable
+as you can. Use mneumonic function and variable names. Include
+comments to explain how the code works and what your assumptions are.
+Your solution should have a README file explaining the overall
+structure of your implementation, how to build it, and how to run it.
+
+*********************************************
+
+This project can be implemented in either SML or Haskell, or both (for
+30% extra credit).  It is essential that your code compile correctly
+-- very little credit will be given for code with syntax or type
+errors.  It is also important that you show that you have done some
+testing to prove that your implementation works correctly, by
+providing test cases and testing transcripts.  You can mine code
+from earlier homeworks, the simple language implementation example,
+and the Hutton calculator.lhs example on the Programs page.
+
+
+==================================================================
+
+Step 1. Input and simple parsing.
+---------------------------------
+
+An example of a very simple calculator is provided in the file
+IO-parsing.hs (added to the Programs page) that shows how the input
+readers can be used to process characters read using the IO monad (by
+the getChar action in particular).
+
+This example uses a variant of the Reader monad given in the file
+Reader.hs.  At the end of Reader.hs, I define a Reader action expr
+which parses and evaluates extremely simple arithmetic expressions of
+the for "3", "1+2", "4+7+6", i.e. expressions formed by adding
+numbers. This expr Reader is used to process the input gathered by the
+top-level IO action getInput.  This illustrates how to divide the task
+of character input from the task of input processing.
+
+The Reader.hs file has been rewritten mainly to define 
+Reader as a Monad instance from the beginning, and it uses
+the usual "return" and ">>=" names for monad operations. This
+makes it possible to use the "do" notation to build Readers.
+
+For SML we have in stream.sml and inputfn.sml how to connect
+character input to input processing. Try adding an SML version
+of the expr reader to inputfn.sml.
+
+Files provided: IO-parsing.hs, Reader.hs, stream.sml, and inputfn.sml.
+
+
+Step 2. Lexical analysis (or tokenization)
+-------------------------------------------
+
+The sample expr Reader at the end of Reader.hs goes directly from
+an input stream of characters to the integer result of expression
+evaluation. It analyzes the character stream into meaningful units
+like the "+" symbol and natural numbers (digit sequences), and
+then interprets the sequence of these elements as an expression
+and evaluates it as it parses.
+
+Naively, this process looks like (ignoring the complexities of
+the Reader monad):
+
+     Instream  --------------------->  Int
+                        expr
+
+To support more complicated terms and definitions, it will be
+convenient to factor this process into several stages.  The 
+parsing of input characters into expressions is typically split
+into two phases
+
+   (1) lexical analysis, which splits the character stream into
+       meaningful segments representing operators, numbers,
+       identifiers, keyworks, and punctuation (e.g. parentheses).
+       These units are usually called "tokens".  For instance,
+       "2+3" would break down into three tokens: (number 2,
+       operator +, number 3). Tokens may or may not be separated
+       by white space.
+
+   (2) parsing the resulting sequence of tokens into expression
+       structures, usually represented by values of an expression
+       abstract syntax.  For instance, (number 2, operation +,
+       number 3) might be parsed into
+
+          Plus(Nat 2, Nat 3)
+
+       where Plus and Nat are data constructors for an 
+       expression datatype.  We have seen such a datatype before
+       in Problem 6 of Homework 1.
+
+Once we have expressions represented by such an abstract
+syntax, it is fairly straightforward to write an evaluator
+for them. This evaluator can take the form of a direct
+interpreter:
+
+   eval :: Expr -> Int     (val eval : expr -> int)
+
+or if we want to be fancy we could "compile" the expression
+into a sequence of abstract machine instructions as we did
+in Homework 1 with compilation of expressions to the RPN
+abstract machine.
+
+So we want to define a type of tokens and then tokenization
+will be a transformation of a character stream (char list,
+respectively [Char] in SML and Haskell) into a token stream.
+
+   tokenize :: Reader TokenStream       (Haskell)
+
+   val tokenize : tokenstream reader    (SML)
+
+where
+
+   type TokenStream = [Token]           (Haskell)
+
+   type tokenstream = token list        (SML)
+
+This will be based on a token reader:
+
+   tokenRdr :: Reader Token             (Haskell)
+
+   tokenRdr : token reader              (SML)
+
+The reader tokenRdr will be defined as a multi-way choice
+between readers for the various kinds of token, e.g.
+
+   324  -- natural number token
+
+   x23  -- alphanumeric identifier
+
+   +    -- plus operator (and similarly for the other operators)
+
+   (    -- left parenthesis
+
+   )    -- right parenthesis
+
+These different forms of token can be represented by constructors
+for a token datatype:
+
+   data Token
+     = ID String | ... | PLUS | ... | LPAR | RPAR
+
+Lets assume the following set of basic arithmetic operations:
+
+   +, -      additive
+   *, /, %   multipicative (% = mod)
+   ~         (arithmetic) negation
+
+These are all binary except for ~, which is unary.
+
+
+
+(3) Parsing expressions
+-----------------------
+
+We define an datatype for the abstract syntax of expressions. In
+Haskell this would be something like:
+
+   type Variable = String
+
+   data Expr
+     = Nat Int
+     | ... | Plus Expr Expr | ...
+
+Next we want to take the result of tokenization, a token stream
+and write parsing actions that consume the token stream and produce
+expression abstract syntax (values of the Expr type).
+
+We can express parsing as yet another monad (e.g. in Haskell):
+
+   data Parser a = P (TokenStream -> Maybe (a, TokenStream))
+
+   instance Monad Parser where
+     return v = P (\ toks -> Just(v, toks))
+     P p >>= f = P (\ toks -> ...)
+     fail s = 
+
+by analogy with the Reader monad defined in Reader.hs.
+
+The Parser actions will be something like the expr :: Reader Int
+reader action at the end of Reader.hs, except that instead of
+computing the numeric result, they will build abstract syntax
+values representing the expressions that they parse.
+
+Here is the Haskell interface:
+
+   getToken :: Parser Token        -- like inputc for Reader
+
+   parse :: Parser a -> (TokenStream -> Maybe(a,TokenStream))
+     -- perform a parse, analagous to performRdr
+
+   isToken :: Token -> Parser ()   -- recognize a given token
+                                   -- analagous to the symbol Reader
+
+   natExpr :: Parser Expr
+
+   identExpr :: Parser Expr
+
+   expr :: Parser Expr
+
+   term :: Parser Expr
+
+   factor :: Parser Expr
+
+Here expr is the top-level parser action, which parses a complete
+top-level expression.  But in order to implement the usual operator
+precedence rules, we need the auxiliary expression classes given
+by the following grammar (omiting the unary negation operator (~)):
+
+   expr   ::=  term "+" expr
+   expr   ::=  term "-" expr
+   expr   ::=  term
+
+   term   ::=  factor "*" term 
+   term   ::=  factor "/" term    -- div
+   term   ::=  factor "%" term    -- mod
+   term   ::=  factor
+
+   factor ::=  "(" expr ")"
+   factor ::=  "nat"              -- nat token of form: Nat n
+   factor ::=  "id"               -- id token of form: Id s
+
+Here expr, term, and factor are known as "nonterminals",
+while the quoted symbols "+", "-", "nat", "id", etc. represent
+terminal symbols, which are tokens. This grammar is designed to
+enforce the usual precedence rules, where the multiplicative
+operators "*", "/", "%"
+
+Using some regular expression notation, this grammar can be
+written more succinctly as:
+
+   empty  ::=
+   expr   ::=  term ("+" expr | "-" expr | empty)
+   term   ::=  factor ("*" term | "/" term | "%" term | empty)
+   factor ::=  "(" expr ")" | "nat" | "id"
+
+Now each of the nonterminals expr, term, and factor is translated
+into a Parser action. Here, for example, is how the grammar production
+for expr translates into a Parser action:
+
+   expr :: Parser Expr
+   expr = do t <- term
+	     do isToken PLUS
+		e <- expr
+		return (Plus t e)
+	      +++
+	      do isToken MINUS
+		 e <- expr
+		 return (Minus t e)
+	       +++
+	       return t
+
+Observe that the three parser actions are mutually recursive.
+-------------------
+SML Note: In the SML version of the parser, the parser type can
+be a simple abbreviation for a function type:
+
+   type 'a parser = tokenStream -> ('a * tokenStream) option
+
+Thus the parser actions expr, term, and factor will be defined 
+as functions, and so can be mutually recursive:
+
+   fun expr toks = 
+       chain term (fn t =>
+	chain (isToken T.PLUS) (fn _ =>
+	 chain expr (fn e =>
+	  return (Plus(t, e))))
+	+++
+	chain (isToken T.MINUS) (fn _ =>
+	 chain expr (fn e =>
+	  return (Minus(t, e))))
+	+++
+	return t) toks
+
+   and term toks = (...) toks
+   and factor toks = (...) toks
+
+
+Note that we have to "eta-expand" the functions so that they are
+in the right form for using the recursive "fun" declaration.
+---------------------
+
+
+
+(4) Evaluating Expressions
+--------------------------
+
+Once we have captured an expression as an abstract syntax value
+of type Expr, we can evaluate it using a simple expression 
+interpreter:
+
+---------   
+module Eval where
+
+import Exprs
+
+eval :: Expr -> Int
+eval (Nat n) = n
+...
+
+--------
+
+Here we are ignoring identifiers (eval(Id s) can remain undefined
+initially) -- we'll come back to these later after identifier
+definitions have been added.
+
+
+
+(5) Top level calculator command
+--------------------------------
+
+Now we put all these pieces together in the top-level calculator
+function, which we will call calc:
+
+Haskell version:
+
+------------------------------ 
+file: Calc.hs
+------------------------------
+-- Calc.hs 
+module Calc where 
+
+import Reader
+import Tokens
+import Exprs
+import Parser
+import Eval
+
+calc :: Instream -> Maybe Int
+calc instr = 
+  case (performRdr tokenize instr) of
+    Nothing -> Nothing
+    Just (toks,_) -> 
+      case (parse expr toks) of 
+        Nothing -> Nothing
+        Just(v,_) -> Just (eval v)
+------------------------------
+
+SML version:
+
+------------------------------
+file: calc.sml
+------------------------------
+(* calc.sml *)
+
+structure Calc =
+struct
+
+  structure R = Reader
+  structure T = Tokens
+  structure E = Exprs
+  structure P = Parser
+  structure V = Eval
+
+  (* calc : R.instream -> int option *)
+  fun calc (instr : R.instream) = 
+      case (T.tokenize instr)
+	of NONE => NONE
+	 | SOME (toks,_) =>
+	   (case (P.expr toks)
+	      of NONE => NONE
+	       | SOME(v,_) => SOME (V.eval v))
+
+end (* structure Calc *)
+------------------------------
+
+For SML, we also need a CM description
+file to build the multifile program:
+
+------------------------------
+file: calc.cm
+------------------------------
+Group is
+
+  $/basis.cm
+  
+  instream.sig
+  listinstream.sml
+  readerfn.sml
+  reader.sml
+  tokens.sml
+  exprs.sml
+  parser.sml
+  eval.sml
+  calc.sml
+------------------------------
+
+This file is located in the same directory as the source files that it
+lists, and we compile the calculator by running the command:
+
+- CM.make "calc.cm";
+
+Here the reader.sml file just contains the following declaration:
+
+   structure Reader : READER = ReaderFn(ListInstream)
+
+and we could change the underlying implementation of instreams by
+replacing ListInstream with, say, StreamInstream.
+
+The calculator process can now be broken into the following chain:
+
+   instream  -----------------------------> tokenStream
+                       tokenize
+
+   tokenStream ---------------------------> expr
+                       parse
+
+   expr ----------------------------------> int
+                       eval
+
+
+
+(6) Adding unary negation
+-------------------------
+
+We are using "~" as the symbol denoting unary negation (to avoid some
+complications involved in overloading "-" as both the subtraction and
+the negation operators).  We will assume that "~" should have higher
+precedence, i.e. should bind tighter, than any of the binary
+operations.
+
+We can add it to the grammar by adding a new nonterminal "signed"
+
+   signed  ::= "~" factor | factor
+
+and revising the production for term to be:
+
+   term   ::=  signed ("*" term | "/" term | "%" term | empty)
+
+After adding the corresponding signed Parser action to parser.sml,
+we can calculate using negation:
+
+   - Calc.calc (ListInstream.fromString "2*(3+~1)");
+   val it = SOME 4 : int option
+
+
+
+(7) Identifiers and definitions
+-------------------------------
+
+Let's introduce identifiers as basic elements of expressions.  At
+the token level, we have a token constructor ID
+
+   data Token = ... | ID String | ...
+
+   datatype toke = ... | ID of string | ...
+
+which takes the name of the identifier as an argument.  So the
+identifier x is represented by the token (ID "x"). We already 
+included these in the expression grammar above (section (3))
+as elements of factors. The parser will translate a token like
+(ID "x" :: Token) into abstract syntax for an elementary expression:
+(Id "x" :: Expr) (note the use of ID for the token constructor, and
+Id for a variable expression constructor).
+
+So assuming we can parse an expression like "x+3" into abstract
+syntax like Plus(Id "x", Nat 3), how do we evaluate such an 
+expression?  Clearly we need to know what integer value is
+represented by the variable x. This information is obtained from
+an "environment", which is a finite map from variables to their
+values (in this case values will always be integers).  We have
+seen a suitable data structure for representing environments 
+before: association lists (alists) with strings for keys.
+Given an environment
+
+   env = [..., ("x", 3), ...]
+
+we can evaluate "x+2" by looking up the value of x in env, which
+gives 3, and then adding 3 and 2 to get 5.
+
+So evaluation of an expression will now require an environment as
+an additional parameter:
+
+   eval :: Expr -> Env -> Int
+
+   val eval : (expr * env) -> int
+
+
+The next question is: where do environments come from?  We get
+variable bindings by processing declarations. We can use the
+following conventional syntax for simple variable declarations:
+
+   let variable = expr
+
+E.g.
+
+   let x = 3-1
+
+Lexically, we need to add two new token constructors:
+
+   data Token = ... | LET | EQ
+
+where the token reader will translate the string "let" into the
+token LET, and the string "=" into EQ.  The grammar needs to be
+extended with a new nonterminal, "decl", and a new rule:
+
+   decl  ::=  "let" id "=" expr
+
+or 
+
+   decl ::= LET (ID s) EQ expr
+
+--------------------- 
+*** Keyword tokens *** 
+
+LET (standing for "let") is an example of a keyword token. The
+tokenize function must look for such keywords before recognizing
+general identifiers like "x" or "abc", because otherwise "let" would
+be translated as (ID "let"), i.e. as a general identifier.  This goes
+for other keywords to be introduced later, like "fun" and "if",
+"then", "else".
+---------------------
+
+
+The parser will translate this into a new abstract syntax type
+for declarations, say:
+
+   data Decl = Let Variable Expr
+
+   datatype decl = Let of variable * expr
+
+Now the calculator input can take two forms: (1) an expression to
+be evaluated, or (2) a declaration to be processed.  We can call
+a calculator input form a "statement", and define the statement
+concrete and abstract syntax by
+
+   stmt  ::=  decl | expr
+
+   data Stmt = D Decl | E Expr
+
+   datatype stmt = D of decl | E of expr
+
+Finally we can combine a sequence of declarations and expressions
+into a "program":
+
+   type Prog = [Stmt]
+
+   type prog = stmt list
+
+To evaluate a statement, we have a function
+
+   evalStmt :: Stmt -> Env -> (Int, Env)
+
+For instance:
+
+   evalStmt (E(Plus (Id "x") (Nat 2)), env) ==> (5, env)
+
+if env maps "x" to 3. For declarations,
+
+   evalStmt (D(Decl "x" (Nat 3)), env) ==>  (3, ("x",3):env)
+
+i.e. the value returned for a declaration is the value of the
+defining expression (the "definiens"), and the environment is
+the original environment extended with the new binding of "x".
+
+We can process programs is a couple of ways.  First we can assume
+that each "line" of input is going to contain one statement, and
+have the top-level evaluation loop process one line after another,
+passing the environment as a parameter through the loop.
+Alternatively, we can add concrete syntax for sequences of
+statements and modify the parser to process them into statement
+lists.
+
+    prog  ::=  stmt (";" prog | empty)
+
+Then a single "line" of input could have multiple statements
+separated by the semicolon token.
+
+
+   
+(8) Function definitions and applications
+-----------------------------------------
+Lets start with a very simple form of function definition
+
+    fun f x = x+3
+
+using the reserved token "fun" to introduce the function
+definition, followed by the function name (a variable),
+the parameter variable, and then "=" followed by the
+function body expression.  The grammar rule for declarations
+then becomes
+
+  decl  ::=  "let" id "=" expr | "fun" id id = expr
+
+or 
+
+  decl  ::= LET ID EQ expr  |  FUN ID ID EQ expr
+
+(FUN is now a new basic token, like LET).
+The grammar for expressions is modified by adding
+a function application "f(expr)" as a new form of
+factor:
+
+  factor ::=  "(" expr ")" | id "(" expr ")" | nat | id
+
+Evaluating a function definition should add a 
+function name to function value binding to the environment.
+A function value will be a lambda-abstraction "closure":
+
+   FunVal(Fn("x", expr), env)
+
+where the abstract syntax for a function expression
+(corresponding to a lambda expression), is defined by
+
+  datatype funExpr = Fn of variable * body
+
+and env is the current environment at the point
+where the function definition is evaluated -- it should
+contain bindings for any variables (other than the 
+parameter "x") that appear free in the body expression.
+Fval is a dataconstructor for a more general "value" 
+datatype
+
+  datatype value = IntVal of int 
+                 | BoolVal of bool
+                 | FunVal of funExpr * env
+
+For instance, after
+
+  let y = 8
+
+the declaration 
+
+  fun f x = y + x
+
+should add the binding
+
+  ("f", FunVal(Fn("x", Plus(Id "y", Id "x")), ("y", IntVal 8)::env))
+
+to the current environment env.  The environment now can contain two
+kinds of bindings -- function bindings and integer bindings, so we use
+the value datatype defined above for bound values (the boolean values
+(BoolVal) won't appear in environments, but we need them as the value
+variant produced when evaluating relational expressions).
+
+To evaluate a factor expression of the form
+
+   f(argexpr)
+
+in and environment env we will follow the following procedure:
+
+(i) look up the function variable f in env, obtaining a function
+    value funval of the form
+ 
+      funval = FunVal(Fn(var, body), env')
+
+(ii) evaluate the argument argexpr in env, obtaining a value argval.
+
+(iii) add a binding (var, argval) to env', yielding an environment env''
+(this augments the closure environment env' so that it binds
+_all_ the variable appearing in body, including the function
+parameter var)
+
+(iv) evaluate the body expression in env'' to obtain the value of the
+application expression.
+
+
+(9) Relational operators and conditional expressions
+----------------------------------------------------
+
+We'll assume that two relational operators, "==" and "<" will suffice,
+since the others can be defined in terms of these, using conditional
+expressions.
+
+The conditional operators will be infix operators of lower precedence
+than any of the arithmetic operators.  This can be expressed in the
+grammar by adding another nonterminal rexpr with the following rule:
+
+   rexpr  ::=  expr "==" expr | expr "<" expr
+
+Then conditional expressions, which will become the new top-level form
+of expression, can be handled by introducing one more nonterminal,
+cexpr, with grammar rule
+
+   cexpr  ::=  "if" rexpr "then" expr "else" expr | expr
+   
+This grammar limits the role of relational expressions (rexpr) to be
+used only in the condition subexpression of conditional
+expressions. Allowing more general use of relational expressions would
+require a more complicated grammar.
+
+We need to introduce three new "keyword" tokens for "if" (IF), "then"
+(THEN), and "else".  The infix operators "==" and "<" can be
+recognized by the symbol token reader as was done for the arithmetic
+operators.
+
+The relational and conditional expressions also have to be
+added to the expression abstract syntax type.  They can be
+added as new constructors for the general expr type:
+
+  datatype expr
+    = Nat of int
+    ...
+    | Equal of expr * expr
+    | Less of expr * expr
+    | If of expr * expr * expr
+
+
+Evaluation of these new expressions is straightforward, but
+the type for expression values needs to be expanded to cover
+the boolean values of relational expressions.
+
+
+(10) Recursive functions
+
+Recursive functions do not need any additional syntax, either at the
+grammer level or the abstract syntax level.  Recursion can be
+supported simply by adding the function binding as well as the
+parameter binding to the closure environment before evaluating the
+function body expression. In other words, we modify step (iii) in the
+procedure for function application as follows:
+
+(iii) add bindings (var, argval) and (f, funval) to env', yielding an
+environment env'' (this augments the closure environment env' so that
+it binds _all_ the variable appearing in body, including the function
+parameter var and the called function symbol itself, so it can be
+called recursively in the body).
+
+
+
+(11) Summary
+
+* Grammar
+
+Here is the final grammar for the calculator language:
+
+-- conditional expressions, the top-level form of expressions
+cexpr  ::=  "if" rexpr "then" expr "else" expr | expr
+
+-- relational expressions, where the arguments are arithmetic
+rexpr  ::=  expr "==" expr | expr "<" expr
+
+-- arithmetic expressions 
+empty  ::=
+expr   ::=  term ("+" expr | "-" expr | empty)
+term   ::=  signed ("*" term | "/" term | "%" term | empty)
+signed ::=  "~" factor | factor
+factor ::=  "(" expr ")" | id "(" expr ")" | nat | id
+nat    ::=  Nat n    -- literal Nat token
+id     ::=  Id s     -- literal Id token
+
+-- declarations, simple and function
+decl   ::=  "let" id "=" cexpr | "fun" id id = cexpr
+
+-- top-level "statements", which may be either (conditional)
+-- expressions, or declarations
+stmt   ::=  decl | cexpr
+
+-- programs, sequences of statments separated by ":"
+prog   ::=  stmt (";" prog | empty)
+
+The prog phrase is optional. The calculator can be designed
+to read one statement per line, in which case the line break
+is the implicit separator.
+
+
+* Top-level REPL loop
+
+Here is a sample calculator top-level loop (SML version)
+------------------------------------------------------------------------
+(* calc.sml *)
+
+structure Calc =
+struct
+
+  structure S = ListInstream
+  structure R = Reader
+  structure T = Tokens
+  structure E = Exprs
+  structure P = Parser
+  structure V = Eval
+
+  fun printVal (V.IntVal n) =
+      print (Int.toString n)
+    | printVal (V.BoolVal b) =
+      print (Bool.toString b)
+    | printVal (V.FunVal _) =
+      print ("<function>")
+
+  fun printStmt (V.ExprVal v) =
+      (print ">> "; printVal v; print "\n")
+    | printStmt (V.DeclVal(var,v)) =
+      (print (">> "^var^" = ");
+       printVal v; print "\n")
+
+  (* repl : Env.env -> unit
+   * the calculator's read-eval-print loop *)
+  fun repl (env) = 
+      (* input one line *)
+      case TextIO.inputLine TextIO.stdIn
+        of NONE => ()  (* no input, exit *)
+         | SOME line =>
+           (* tokenize the line *)
+           (case (T.tokenize(S.fromString line))
+	      of NONE => 
+                 (print "Error - tokenize\n";
+		  repl env)
+	       | SOME (toks,_) =>
+                 (* parse token stream *)
+	         (case (P.stmt toks)
+	            of NONE =>
+                       (print ("Error - parse failure: "^line^"\n");
+			repl env)
+	             | SOME(s,_) =>
+                       (* parsed one statement, evaluate it *)
+                       (let val (res,env') = V.evalStmt env s
+                         in printStmt res;
+			    repl env'
+		        end
+                        handle Env.Unbound s =>
+                          (print ("Error - unbound var: "^s^"\n");
+			   repl env))))
+
+  fun calc () = repl (Env.empty)
+
+end (* structure Calc *)
+------------------------------------------------------------------------
