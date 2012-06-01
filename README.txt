@@ -12,6 +12,17 @@ I have been successful (I think) at least in implementing:
     * conditionals (if x then y else z)
     * relational operators (<, <=, >, >=, ==, /=)
 
+The layout of both applications follows the assignment closely. 
+    * Calc.hs/calc.sml : the basic REPL
+    * Env.hs/env.sml : implementation of an association-list for storing environments
+    * Eval.hs/Eval.sml : evaluation of expressions
+    * Exprs.hs/exprs.sml : definiton of expressions
+    * Reader.hs/listinstream.sml, reader.sml, readerfn.sml : implementation of stream type and reader
+    * Tokens.hs/tokens.sml : implementation of tokenizer to convert strings to tokens
+    * Parser.hs/parser.sml : implementation of parser to convert tokens to abstract expressions
+    * Test.hs/test.sml : test suite
+
+
 I have also included a test suite for each version that confirms the correct
 output for each of the following expressions:
 
